@@ -30,9 +30,6 @@ This agent implements the **two-day momentum strategy**, which:
 │   ├── backtest.py                # Backtesting framework
 │   ├── generate_calls.py          # Generate trade signals
 │   └── execute_calls.py           # Execute trades via Upstox API
-├── scripts/
-│   ├── create_company_mapping.py
-│   └── create_company_metrics.py
 ├── data/
 │   └── bse30_constituents.csv     # BSE-30 stocks with Upstox instrument keys
 └── requirements.txt                # Python dependencies

@@ -36,6 +36,9 @@ data/
 *.json
 !data/bse30_constituents.csv
 
+# Scripts (one-time setup utilities)
+scripts/
+
 # Plots
 plots/
 
