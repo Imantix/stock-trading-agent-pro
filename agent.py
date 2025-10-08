@@ -40,6 +40,12 @@ DATA_DIR = Path("data")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--strategy",
+        type=str,
+        required=True,
+        help="Strategy to use (e.g., two_day_momentum)",
+    )
+    parser.add_argument(
         "--backtest",
         action="store_true",
         help="Run backtest mode instead of daily trading",
@@ -81,11 +87,20 @@ def main() -> int:
     # Ensure data directory exists
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Load strategy module dynamically
+    sys.path.insert(0, str(Path(__file__).parent / "strategies"))
+    try:
+        strategy_module = __import__(args.strategy)
+    except ImportError:
+        print(f"✗ Error: Strategy '{args.strategy}' not found in strategies/")
+        print(f"  Available strategies: {', '.join([f.stem for f in (Path(__file__).parent / 'strategies').glob('*.py') if f.stem != '__init__'])}")
+        return 1
+
     prices_file = DATA_DIR / "bse30_daily_prices.csv"
-    summary_file = DATA_DIR / "bse30_summary.csv"
-    report_file = DATA_DIR / "backtest_report.md"
+    summary_file = DATA_DIR / f"bse30_summary_{args.strategy}.csv"
+    report_file = DATA_DIR / f"backtest_report_{args.strategy}.md"
     constituents_file = DATA_DIR / "bse30_constituents.csv"
-    portfolio_state_file = DATA_DIR / "portfolio_state.json"
+    portfolio_state_file = DATA_DIR / f"portfolio_state_{args.strategy}.json"
 
     # BACKTEST MODE
     if args.backtest:
@@ -108,12 +123,10 @@ def main() -> int:
 
         # Step 2: Run backtest
         print("=" * 60)
-        print("STEP 2: Running backtest...")
+        print(f"STEP 2: Running backtest with {args.strategy} strategy...")
         print("=" * 60)
         try:
-            # Import strategy for signal annotation
-            sys.path.insert(0, str(Path(__file__).parent / "strategies"))
-            from two_day_momentum import annotate_signals
+            annotate_signals = getattr(strategy_module, 'annotate_signals')
 
             prices = bt.load_prices(prices_file)
             prices = annotate_signals(prices)
@@ -170,7 +183,7 @@ def main() -> int:
 
     if not summary_file.exists():
         print(f"✗ Error: Backtest summary not found at {summary_file}")
-        print(f"  Please run: python backtest_two_day_momentum.py --summary-output {summary_file}")
+        print(f"  Please run: python agent.py --strategy {args.strategy} --backtest")
         return 1
 
     try:
@@ -197,10 +210,10 @@ def main() -> int:
         holdings = calls.compute_holdings(state, prices)
 
         # Generate sell calls for current holdings
-        sell_calls = calls.compute_sell_calls(prices, state)
+        sell_calls = calls.compute_sell_calls(prices, state, strategy_module)
 
         # Generate buy calls for top performers
-        buy_calls = calls.compute_buy_calls(prices, top_symbols, state, args.investment)
+        buy_calls = calls.compute_buy_calls(prices, top_symbols, state, args.investment, strategy_module)
 
         if not sell_calls and not buy_calls:
             print("✓ No new trade calls to execute")

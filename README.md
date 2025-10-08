@@ -85,12 +85,12 @@ All operations run through the single `agent.py` entry point.
 **1. First Time Setup - Run Backtest:**
 
 ```bash
-python agent.py --backtest
+python agent.py --strategy two_day_momentum --backtest
 ```
 
 **Outputs:**
-- [data/bse30_summary.csv](data/bse30_summary.csv) - Performance summary (used by daily trading)
-- [data/backtest_report.md](data/backtest_report.md) - **Detailed markdown report** with Sharpe Ratio, Max Drawdown, top/bottom performers
+- [data/bse30_summary_two_day_momentum.csv](data/bse30_summary_two_day_momentum.csv) - Performance summary (used by daily trading)
+- [data/backtest_report_two_day_momentum.md](data/backtest_report_two_day_momentum.md) - **Detailed markdown report** with Sharpe Ratio, Max Drawdown, top/bottom performers
 
 Run weekly/monthly to update stock rankings.
 
@@ -98,20 +98,20 @@ Run weekly/monthly to update stock rankings.
 
 ```bash
 # Dry run (no actual trades)
-python agent.py --dry-run
+python agent.py --strategy two_day_momentum --dry-run
 
 # Live trading
-python agent.py
+python agent.py --strategy two_day_momentum
 ```
 
 **What it does:**
 1. Downloads latest BSE-30 prices (differential update)
-2. Loads pre-computed backtest summary
+2. Loads pre-computed backtest summary for the strategy
 3. Generates buy/sell trade calls for top performers
 4. Executes trades via Upstox API
 
 **Defaults:** ₹100k investment, top 5 stocks
-**Customize:** `python agent.py --investment 50000 --top-n 3`
+**Customize:** `python agent.py --strategy two_day_momentum --investment 50000 --top-n 3`
 
 ### Schedule as Cron Job (Linux/Mac) or Task Scheduler (Windows)
 
@@ -119,11 +119,11 @@ python agent.py
 
 Linux/Mac (crontab):
 ```bash
-30 15 * * 1-5 cd /path/to/stock-trading-agent && .venv/bin/python agent.py
+30 15 * * 1-5 cd /path/to/stock-trading-agent && .venv/bin/python agent.py --strategy two_day_momentum
 ```
 
 Windows (Task Scheduler):
-- Run: `python agent.py`
+- Run: `python agent.py --strategy two_day_momentum`
 - Start in: `C:\path\to\stock-trading-agent`
 - Trigger: Daily at 3:30 PM, weekdays only
 
@@ -131,11 +131,11 @@ Windows (Task Scheduler):
 
 Linux/Mac:
 ```bash
-0 10 * * 0 cd /path/to/stock-trading-agent && .venv/bin/python agent.py --backtest
+0 10 * * 0 cd /path/to/stock-trading-agent && .venv/bin/python agent.py --strategy two_day_momentum --backtest
 ```
 
 Windows:
-- Run: `python agent.py --backtest`
+- Run: `python agent.py --strategy two_day_momentum --backtest`
 - Start in: `C:\path\to\stock-trading-agent`
 - Trigger: Weekly on Sunday at 10:00 AM
 
@@ -144,6 +144,9 @@ Windows:
 ```bash
 python agent.py --help
 ```
+
+**Required:**
+- `--strategy STRATEGY` - Strategy name (must match file in strategies/ folder, e.g., `two_day_momentum`)
 
 **Available flags:**
 - `--backtest` - Run backtest mode (generates summary and report)

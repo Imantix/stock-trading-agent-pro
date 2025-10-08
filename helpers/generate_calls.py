@@ -11,12 +11,9 @@ from typing import Dict, List
 
 import pandas as pd
 
-# Import backtest helper and strategy
+# Import backtest helper
 sys.path.insert(0, str(Path(__file__).parent))
 import backtest as bt
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "strategies"))
-from two_day_momentum import generate_buy_calls, generate_sell_calls
 
 DEFAULT_INVESTMENT = 100_000.0
 DEFAULT_TOP_N = 5
@@ -88,10 +85,14 @@ def compute_buy_calls(
     top_symbols: List[str],
     state: Dict,
     per_trade_budget: float,
+    strategy_module,
 ) -> List[dict]:
     """Wrapper for strategy's generate_buy_calls with date annotation."""
     available_cash = state.get("cash", 0.0)
     existing_symbols = [pos["symbol"] for pos in state.get("positions", [])]
+
+    # Get strategy's buy call generation function
+    generate_buy_calls = getattr(strategy_module, 'generate_buy_calls')
 
     # Use strategy's portfolio-aware buy call generation
     calls = generate_buy_calls(
@@ -116,9 +117,13 @@ def compute_buy_calls(
 def compute_sell_calls(
     prices: pd.DataFrame,
     state: Dict,
+    strategy_module,
 ) -> List[dict]:
     """Wrapper for strategy's generate_sell_calls with date annotation."""
     current_positions = state.get("positions", [])
+
+    # Get strategy's sell call generation function
+    generate_sell_calls = getattr(strategy_module, 'generate_sell_calls')
 
     # Use strategy's portfolio-aware sell call generation
     calls = generate_sell_calls(
