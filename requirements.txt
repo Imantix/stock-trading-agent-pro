@@ -1,0 +1,15 @@
+# Core data processing
+pandas==2.3.2
+numpy==2.0.2
+
+# Data fetching
+yfinance==0.2.66
+requests==2.32.5
+
+# Date/time utilities
+python-dateutil==2.9.0.post0
+pytz==2025.2
+
+# Additional dependencies
+beautifulsoup4==4.13.5
+lxml==6.0.2

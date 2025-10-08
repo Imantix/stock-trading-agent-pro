@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""
+Single endpoint for daily trading:
+1. Download latest BSE-30 prices
+2. Generate trade calls from pre-computed backtest summary
+3. Execute calls via Upstox API
+
+Note: Run backtest_two_day_momentum.py separately (weekly/monthly)
+to update the performance summary that drives stock selection.
+
+This script can be scheduled as a cron job to run daily.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from datetime import timedelta
+from pathlib import Path
+
+# Import the main functions from each module
+sys.path.insert(0, str(Path(__file__).parent / "helpers"))
+
+import pandas as pd
+
+import generate_calls as calls
+import execute_calls as execute
+from download_prices import main as download_prices
+
+
+DEFAULT_INVESTMENT = 100_000.0
+DEFAULT_TOP_N = 5
+DATA_DIR = Path("data")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--investment",
+        type=float,
+        default=DEFAULT_INVESTMENT,
+        help="Total investment capital (default: 100,000)",
+    )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=DEFAULT_TOP_N,
+        help="Number of top stocks to trade (default: 5)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate calls but don't execute trades",
+    )
+    parser.add_argument(
+        "--skip-download",
+        action="store_true",
+        help="Skip downloading prices (use existing data)",
+    )
+    parser.add_argument(
+        "--access-token",
+        type=str,
+        default=None,
+        help="Upstox access token (or use UPSTOX_ACCESS_TOKEN env var)",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    # Ensure data directory exists
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    prices_file = DATA_DIR / "bse30_daily_prices.csv"
+    summary_file = DATA_DIR / "bse30_summary.csv"
+    constituents_file = DATA_DIR / "bse30_constituents.csv"
+    portfolio_state_file = DATA_DIR / "portfolio_state.json"
+
+    # Step 1: Download latest prices
+    if not args.skip_download:
+        print("=" * 60)
+        print("STEP 1: Downloading latest BSE-30 prices...")
+        print("=" * 60)
+        try:
+            download_prices()
+            print(f"✓ Prices downloaded to {prices_file}\n")
+        except Exception as e:
+            print(f"✗ Error downloading prices: {e}")
+            return 1
+    else:
+        print("Skipping price download (using existing data)\n")
+
+    # Step 2: Load pre-computed backtest summary
+    print("=" * 60)
+    print("STEP 2: Loading backtest summary...")
+    print("=" * 60)
+
+    if not summary_file.exists():
+        print(f"✗ Error: Backtest summary not found at {summary_file}")
+        print(f"  Please run: python backtest_two_day_momentum.py --summary-output {summary_file}")
+        return 1
+
+    try:
+        summary_df = pd.read_csv(summary_file)
+        print(f"✓ Loaded summary with {len(summary_df)} symbols\n")
+    except Exception as e:
+        print(f"✗ Error loading summary: {e}")
+        return 1
+
+    # Step 3: Load prices for call generation
+    try:
+        prices = pd.read_csv(prices_file, parse_dates=["date"])
+    except Exception as e:
+        print(f"✗ Error loading prices: {e}")
+        return 1
+
+    # Step 3: Generate trade calls (both buy and sell)
+    print("=" * 60)
+    print("STEP 3: Generating trade calls...")
+    print("=" * 60)
+    try:
+        top_symbols = summary_df.sort_values("net_pnl", ascending=False).head(args.top_n)["symbol"].tolist()
+        state = calls.load_portfolio_state(portfolio_state_file, args.investment)
+        holdings = calls.compute_holdings(state, prices)
+
+        # Generate sell calls for current holdings
+        sell_calls = calls.compute_sell_calls(prices, state)
+
+        # Generate buy calls for top performers
+        buy_calls = calls.compute_buy_calls(prices, top_symbols, state, args.investment)
+
+        if not sell_calls and not buy_calls:
+            print("✓ No new trade calls to execute")
+            return 0
+
+        # Display sell calls
+        if sell_calls:
+            print(f"✓ Generated {len(sell_calls)} SELL call(s):")
+            for call in sell_calls:
+                print(f"  - {call['symbol']}: SELL {call['quantity']} @ ~₹{call['reference_price']:.2f}")
+            print()
+
+        # Display buy calls
+        if buy_calls:
+            print(f"✓ Generated {len(buy_calls)} BUY call(s):")
+            for call in buy_calls:
+                print(f"  - {call['symbol']}: BUY {call['quantity']} @ ~₹{call['reference_price']:.2f}")
+            print()
+
+        # Save all calls for reference
+        latest_date = prices["date"].max()
+        planned_date = (latest_date + timedelta(days=1)).date()
+
+        if sell_calls:
+            sell_calls_file = DATA_DIR / f"daily_sell_calls_{planned_date.isoformat()}.csv"
+            pd.DataFrame(sell_calls).to_csv(sell_calls_file, index=False)
+            print(f"✓ Sell calls saved to {sell_calls_file}")
+
+        if buy_calls:
+            buy_calls_file = DATA_DIR / f"daily_buy_calls_{planned_date.isoformat()}.csv"
+            pd.DataFrame(buy_calls).to_csv(buy_calls_file, index=False)
+            print(f"✓ Buy calls saved to {buy_calls_file}")
+        print()
+
+    except Exception as e:
+        print(f"✗ Error generating calls: {e}")
+        return 1
+
+    # Step 4: Execute trades (if not dry run)
+    if args.dry_run:
+        print("=" * 60)
+        print("DRY RUN MODE: Skipping trade execution")
+        print("=" * 60)
+        return 0
+
+    print("=" * 60)
+    print("STEP 4: Executing trades via Upstox API...")
+    print("=" * 60)
+
+    try:
+        access_token = args.access_token or os.getenv("UPSTOX_ACCESS_TOKEN")
+        if not access_token:
+            print("✗ Error: Upstox access token not provided")
+            print("  Set UPSTOX_ACCESS_TOKEN environment variable or use --access-token")
+            return 1
+
+        if not constituents_file.exists():
+            print(f"✗ Error: Constituents file not found at {constituents_file}")
+            print("  Please ensure you have the BSE-30 constituents CSV with InstrumentKey mapping")
+            return 1
+
+        # Load instrument mapping
+        instrument_map = execute.load_instrument_token_map(constituents_file)
+
+        # Execute SELL orders first (to free up cash)
+        if sell_calls:
+            print("Executing SELL orders...")
+            for call in sell_calls:
+                symbol = call["symbol"]
+                instrument_key = instrument_map.get(symbol)
+                if not instrument_key:
+                    print(f"  ✗ Skipping {symbol}: instrument key not found")
+                    continue
+
+                quantity = int(call["quantity"])
+                estimated_proceeds = float(call["estimated_proceeds"])
+
+                payload = {
+                    "quantity": quantity,
+                    "product": "D",
+                    "validity": "DAY",
+                    "price": 0,
+                    "tag": "momentum-signal",
+                    "slice": False,
+                    "instrument_token": instrument_key,
+                    "order_type": "MARKET",
+                    "transaction_type": "SELL",
+                    "disclosed_quantity": 0,
+                    "trigger_price": 0,
+                    "is_amo": False,
+                }
+
+                response = execute.place_order(access_token, payload)
+                status = response.get("status")
+                order_ids = response.get("data", {}).get("order_ids", [])
+
+                print(f"  ✓ {symbol}: SELL {quantity} - status={status}, order_ids={order_ids}")
+
+                # Update portfolio state (remove position, add cash)
+                execute.update_portfolio_after_sell(state, symbol, quantity, estimated_proceeds)
+
+            print()
+
+        # Execute BUY orders
+        if buy_calls:
+            print("Executing BUY orders...")
+            for call in buy_calls:
+                symbol = call["symbol"]
+                instrument_key = instrument_map.get(symbol)
+                if not instrument_key:
+                    print(f"  ✗ Skipping {symbol}: instrument key not found")
+                    continue
+
+                quantity = int(call["quantity"])
+                estimated_cost = float(call["estimated_cost"])
+
+                payload = {
+                    "quantity": quantity,
+                    "product": "D",
+                    "validity": "DAY",
+                    "price": 0,
+                    "tag": "momentum-signal",
+                    "slice": False,
+                    "instrument_token": instrument_key,
+                    "order_type": "MARKET",
+                    "transaction_type": "BUY",
+                    "disclosed_quantity": 0,
+                    "trigger_price": 0,
+                    "is_amo": False,
+                }
+
+                response = execute.place_order(access_token, payload)
+                status = response.get("status")
+                order_ids = response.get("data", {}).get("order_ids", [])
+
+                print(f"  ✓ {symbol}: BUY {quantity} - status={status}, order_ids={order_ids}")
+
+                # Update portfolio state
+                execute.update_portfolio_after_buy(state, symbol, quantity, estimated_cost, order_ids)
+
+            print()
+
+        # Save updated portfolio state
+        execute.save_portfolio_state(portfolio_state_file, state)
+        print(f"✓ Portfolio state updated. Remaining cash: ₹{state.get('cash', 0.0):.2f}")
+        print("=" * 60)
+        print("TRADING PIPELINE COMPLETE")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"✗ Error executing trades: {e}")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
