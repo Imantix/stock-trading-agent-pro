@@ -44,9 +44,17 @@ cd stock-trading-agent
 ```
 
 2. Create and activate a virtual environment:
+
+**Linux/Mac:**
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
+```
+
+**Windows:**
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
 3. Install dependencies:
@@ -55,121 +63,95 @@ pip install -r requirements.txt
 ```
 
 4. Set up environment variables:
-```bash
-# Copy the example env file
-cp .env.example .env
 
-# Edit .env and add your Upstox access token
-# Get your token from: https://upstox.com/developer/
+**Linux/Mac:**
+```bash
+cp .env.example .env
 ```
 
+**Windows:**
+```cmd
+copy .env.example .env
+```
+
+Edit `.env` and add your Upstox access token from https://upstox.com/developer/
+
 ## Usage
+
+All operations run through the single `agent.py` entry point.
 
 ### Quick Start
 
 **1. First Time Setup - Run Backtest:**
 
 ```bash
-# Download historical prices (1 year initially, then differential updates)
-python helpers/download_prices.py
-
-# Run backtest
-python helpers/backtest.py \
-    --prices data/bse30_daily_prices.csv \
-    --summary-output data/bse30_summary.csv \
-    --report-output data/backtest_report.md
+python agent.py --backtest
 ```
 
 **Outputs:**
-- [data/bse30_summary.csv](data/bse30_summary.csv) - Performance summary (used by trading pipeline)
+- [data/bse30_summary.csv](data/bse30_summary.csv) - Performance summary (used by daily trading)
 - [data/backtest_report.md](data/backtest_report.md) - **Detailed markdown report** with Sharpe Ratio, Max Drawdown, top/bottom performers
 
-Run this weekly/monthly to update stock rankings.
+Run weekly/monthly to update stock rankings.
 
-**2. Daily Trading - Run Trade Pipeline:**
+**2. Daily Trading:**
 
 ```bash
 # Dry run (no actual trades)
 python agent.py --dry-run
 
 # Live trading
-python agent.py --investment 100000 --top-n 5
+python agent.py
 ```
 
-This will:
-1. Download latest BSE-30 prices
-2. Load pre-computed backtest summary
-3. Generate trade calls for top performers
-4. Execute trades via Upstox API
+**What it does:**
+1. Downloads latest BSE-30 prices (differential update)
+2. Loads pre-computed backtest summary
+3. Generates buy/sell trade calls for top performers
+4. Executes trades via Upstox API
 
-### Schedule as Cron Job
+**Defaults:** ₹100k investment, top 5 stocks
+**Customize:** `python agent.py --investment 50000 --top-n 3`
 
-**Daily Trading (after market close):**
+### Schedule as Cron Job (Linux/Mac) or Task Scheduler (Windows)
+
+**Daily Trading (after market close at 3:30 PM on weekdays):**
+
+Linux/Mac (crontab):
 ```bash
-# Run at 3:30 PM on weekdays
-30 15 * * 1-5 cd /path/to/stock-trading-agent && /path/to/.venv/bin/python agent.py
+30 15 * * 1-5 cd /path/to/stock-trading-agent && .venv/bin/python agent.py
 ```
 
-**Weekly Backtest Update (optional):**
+Windows (Task Scheduler):
+- Run: `python agent.py`
+- Start in: `C:\path\to\stock-trading-agent`
+- Trigger: Daily at 3:30 PM, weekdays only
+
+**Weekly Backtest Update (optional, Sunday 10 AM):**
+
+Linux/Mac:
 ```bash
-# Run backtest every Sunday at 10 AM
-0 10 * * 0 cd /path/to/stock-trading-agent && /path/to/.venv/bin/python helpers/backtest.py --prices data/bse30_daily_prices.csv --summary-output data/bse30_summary.csv --report-output data/backtest_report.md
+0 10 * * 0 cd /path/to/stock-trading-agent && .venv/bin/python agent.py --backtest
 ```
 
-### Advanced: Run Components Individually
-
-If you need more control, you can run each step separately:
-
-**1. Download Historical Data:**
-```bash
-# Differential update (default - only downloads new data)
-python helpers/download_prices.py
-
-# Or full refresh (1 year)
-python helpers/download_prices.py --full
-```
-
-**2. Backtest Strategy:**
-```bash
-python helpers/backtest.py \
-    --prices data/bse30_daily_prices.csv \
-    --summary-output data/bse30_summary.csv \
-    --report-output data/backtest_report.md
-```
-
-**Outputs:**
-- [data/bse30_summary.csv](data/bse30_summary.csv) - Performance summary
-- [data/backtest_report.md](data/backtest_report.md) - Detailed markdown report
-
-**3. Generate Trade Signals:**
-```bash
-python helpers/generate_calls.py \
-    --prices data/bse30_daily_prices.csv \
-    --summary data/bse30_summary.csv \
-    --investment 100000 \
-    --top-n 5
-```
-
-**4. Execute Trades:**
-```bash
-python helpers/execute_calls.py \
-    --calls-file data/daily_calls_<date>.csv \
-    --constituents data/bse30_constituents.csv \
-    --access-token $UPSTOX_ACCESS_TOKEN
-```
+Windows:
+- Run: `python agent.py --backtest`
+- Start in: `C:\path\to\stock-trading-agent`
+- Trigger: Weekly on Sunday at 10:00 AM
 
 ### Command Line Options
 
 ```bash
 python agent.py --help
-
-Options:
-  --investment AMOUNT    Total investment capital (default: 100,000)
-  --top-n N             Number of top stocks to trade (default: 5)
-  --dry-run             Generate calls but don't execute trades
-  --skip-download       Skip downloading prices (use existing data)
-  --access-token TOKEN  Upstox access token (or use env var)
 ```
+
+**Available flags:**
+- `--backtest` - Run backtest mode (generates summary and report)
+- `--dry-run` - Generate trade calls without executing (for testing)
+- `--skip-download` - Skip price download, use existing data
+- `--investment AMOUNT` - Total capital (default: ₹100,000)
+- `--top-n N` - Number of top stocks to trade (default: 5)
+- `--access-token TOKEN` - Upstox API token (or set UPSTOX_ACCESS_TOKEN env var)
 
 ## Strategy Details
 
