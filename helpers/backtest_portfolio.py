@@ -117,7 +117,7 @@ class PortfolioBacktest:
             historical_data = prices[prices[time_col] <= current_date]
 
             # Process signals for this date
-            self._process_date(historical_data, current_date, time_col)
+            self._process_date(historical_data, current_date, time_col, strategy_module)
 
             # Record portfolio state
             self._record_portfolio_state(current_date, historical_data, time_col)
@@ -129,7 +129,8 @@ class PortfolioBacktest:
         self,
         historical_data: pd.DataFrame,
         current_date: pd.Timestamp,
-        time_col: str
+        time_col: str,
+        strategy_module
     ):
         """Process all signals for a given date."""
         # Get latest price for each symbol
@@ -150,7 +151,7 @@ class PortfolioBacktest:
 
             # Check if strategy has should_exit function
             try:
-                strategy_module = sys.modules.get('volume_momentum') or sys.modules.get('channel_breakout')
+                # Use the actual strategy module passed in, not hard-coded module names
                 if strategy_module and hasattr(strategy_module, 'should_exit'):
                     should_close, reason = strategy_module.should_exit(
                         position.entry_price,
