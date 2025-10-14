@@ -105,7 +105,7 @@ def update_portfolio_after_sell(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--calls-file", type=Path, required=True)
-    parser.add_argument("--constituents", type=Path, default=Path("data/bse30_constituents.csv"))
+    parser.add_argument("--constituents", type=Path, default=Path("data/constituents/bse30_constituents.csv"))
     parser.add_argument("--portfolio-state", type=Path, default=PORTFOLIO_STATE_PATH)
     parser.add_argument("--access-token", type=str, default=None)
     return parser.parse_args()

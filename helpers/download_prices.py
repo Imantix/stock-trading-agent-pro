@@ -127,13 +127,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--constituents",
         type=Path,
-        default=Path("data/bse30_constituents.csv"),
+        default=Path("data/constituents/bse30_constituents.csv"),
         help="Path to BSE-30 constituents file",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/bse30_daily_prices.csv"),
+        default=Path("data/prices/upstox/bse30/bse30_daily_prices.csv"),
         help="Path to output CSV file",
     )
     parser.add_argument(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Iterable, List, Optional
 
@@ -25,40 +26,91 @@ class Trade:
     entry_price: float
     exit_price: float
     shares: float = 1.0
+    timeframe: str = "daily"  # "daily" or "intraday"
+    direction: str = "long"  # "long" or "short"
 
     @property
     def pnl(self) -> float:
-        return (self.exit_price - self.entry_price) * self.shares
+        """Calculate P&L considering position direction."""
+        if self.direction == "long":
+            return (self.exit_price - self.entry_price) * self.shares
+        else:  # short
+            return (self.entry_price - self.exit_price) * self.shares
 
     @property
     def return_pct(self) -> float:
-        return (self.exit_price / self.entry_price - 1.0) * 100.0
+        """Calculate return percentage considering position direction."""
+        if self.direction == "long":
+            return (self.exit_price / self.entry_price - 1.0) * 100.0
+        else:  # short
+            return (self.entry_price / self.exit_price - 1.0) * 100.0
 
     @property
     def holding_days(self) -> int:
         return int((self.exit_date - self.entry_date).days)
 
+    @property
+    def holding_duration(self) -> timedelta:
+        """Return holding duration as timedelta (works for both daily and intraday)."""
+        return self.exit_date - self.entry_date
 
-def load_prices(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, parse_dates=["date"])
-    required = {"symbol", "company", "date", "Open", "Close"}
-    missing = required.difference(df.columns)
-    if missing:
-        raise ValueError(f"Price file is missing required columns: {sorted(missing)}")
-    return df.sort_values(["symbol", "date"]).reset_index(drop=True)
+
+def load_prices(path: Path, timeframe: str = "daily") -> pd.DataFrame:
+    """
+    Load price data from CSV file.
+
+    Args:
+        path: Path to CSV file
+        timeframe: Either "daily" or "intraday" (default: "daily")
+
+    Returns:
+        DataFrame sorted by symbol and date/datetime
+    """
+    if timeframe == "intraday":
+        df = pd.read_csv(path, parse_dates=["datetime"])
+        required = {"symbol", "company", "datetime", "Open", "Close", "High", "Low"}
+        missing = required.difference(df.columns)
+        if missing:
+            raise ValueError(f"Price file is missing required columns: {sorted(missing)}")
+        return df.sort_values(["symbol", "datetime"]).reset_index(drop=True)
+    else:
+        df = pd.read_csv(path, parse_dates=["date"])
+        required = {"symbol", "company", "date", "Open", "Close"}
+        missing = required.difference(df.columns)
+        if missing:
+            raise ValueError(f"Price file is missing required columns: {sorted(missing)}")
+        return df.sort_values(["symbol", "date"]).reset_index(drop=True)
 
 
 # annotate_signals is imported from the strategy module
 
 
-def generate_trades(prices: pd.DataFrame) -> List[Trade]:
+def generate_trades(prices: pd.DataFrame, timeframe: str = "daily") -> List[Trade]:
+    """
+    Generate trades from annotated price data with long/short entry signals.
+
+    Implements TradingView strategy.entry() behavior with automatic position reversals:
+    - When long_entry_signal fires: Enter LONG or reverse from SHORT to LONG
+    - When short_entry_signal fires: Enter SHORT or reverse from LONG to SHORT
+    - Positions automatically reverse (matching Pine Script behavior)
+
+    Args:
+        prices: DataFrame with long_entry_signal and short_entry_signal columns
+        timeframe: Either "daily" or "intraday" (default: "daily")
+
+    Returns:
+        List of Trade objects
+    """
     trades: List[Trade] = []
+    time_col = "datetime" if timeframe == "intraday" else "date"
 
     for symbol, group in prices.groupby("symbol"):
-        group = group.sort_values("date").reset_index(drop=True)
+        group = group.sort_values(time_col).reset_index(drop=True)
         rows = list(group.itertuples(index=False))
         company = group["company"].iloc[0]
-        holding = False
+
+        # Track current position: None, "long", or "short"
+        position: Optional[str] = None
         entry_price: Optional[float] = None
         entry_date: Optional[pd.Timestamp] = None
 
@@ -66,31 +118,71 @@ def generate_trades(prices: pd.DataFrame) -> List[Trade]:
             row = rows[idx]
             next_row = rows[idx + 1]
 
-            if not holding and getattr(row, "buy_signal"):
-                holding = True
-                entry_price = float(next_row.Open)
-                entry_date = pd.Timestamp(next_row.date)
-            elif holding and getattr(row, "sell_signal"):
-                exit_price = float(next_row.Open)
-                exit_date = pd.Timestamp(next_row.date)
-                trades.append(
-                    Trade(
-                        symbol=symbol,
-                        company=company,
-                        entry_date=entry_date,
-                        exit_date=exit_date,
-                        entry_price=entry_price,
-                        exit_price=exit_price,
+            # Check for long entry signal
+            long_signal = getattr(row, "long_entry_signal", False) or getattr(row, "buy_signal", False)
+            # Check for short entry signal
+            short_signal = getattr(row, "short_entry_signal", False) or getattr(row, "sell_signal", False)
+
+            # LONG ENTRY (or reversal from SHORT to LONG)
+            if long_signal:
+                # If currently SHORT, close short position first
+                if position == "short":
+                    exit_price = float(next_row.Open)
+                    exit_date = pd.Timestamp(getattr(next_row, time_col))
+                    trades.append(
+                        Trade(
+                            symbol=symbol,
+                            company=company,
+                            entry_date=entry_date,
+                            exit_date=exit_date,
+                            entry_price=entry_price,
+                            exit_price=exit_price,
+                            timeframe=timeframe,
+                            direction="short",
+                        )
                     )
-                )
-                holding = False
-                entry_price = None
-                entry_date = None
+
+                # Enter LONG position (or switch from SHORT to LONG)
+                if position != "long":  # Only enter if not already long
+                    position = "long"
+                    entry_price = float(next_row.Open)
+                    entry_date = pd.Timestamp(getattr(next_row, time_col))
+
+            # SHORT ENTRY (or reversal from LONG to SHORT)
+            elif short_signal:
+                # If currently LONG, close long position first
+                if position == "long":
+                    exit_price = float(next_row.Open)
+                    exit_date = pd.Timestamp(getattr(next_row, time_col))
+                    trades.append(
+                        Trade(
+                            symbol=symbol,
+                            company=company,
+                            entry_date=entry_date,
+                            exit_date=exit_date,
+                            entry_price=entry_price,
+                            exit_price=exit_price,
+                            timeframe=timeframe,
+                            direction="long",
+                        )
+                    )
+
+                # Enter SHORT position (or switch from LONG to SHORT)
+                if position != "short":  # Only enter if not already short
+                    position = "short"
+                    entry_price = float(next_row.Open)
+                    entry_date = pd.Timestamp(getattr(next_row, time_col))
 
     return trades
 
 
 def summarize_trades(trades: Iterable[Trade]) -> pd.DataFrame:
+    """
+    Convert list of Trade objects to a summary DataFrame.
+
+    Returns:
+        DataFrame with columns for trade details, PnL, returns, holding period, and direction
+    """
     trades_df = pd.DataFrame(
         [
             {
@@ -104,6 +196,9 @@ def summarize_trades(trades: Iterable[Trade]) -> pd.DataFrame:
                 "pnl": t.pnl,
                 "return_pct": t.return_pct,
                 "holding_days": t.holding_days,
+                "holding_duration": str(t.holding_duration) if hasattr(t, 'holding_duration') else None,
+                "timeframe": t.timeframe if hasattr(t, 'timeframe') else "daily",
+                "direction": t.direction if hasattr(t, 'direction') else "long",
             }
             for t in trades
         ]
@@ -185,7 +280,16 @@ def generate_markdown_report(
     start_date = trades_df["entry_date"].min().date() if not trades_df.empty else "N/A"
     end_date = trades_df["exit_date"].max().date() if not trades_df.empty else "N/A"
 
-    report = f"""# Two-Day Momentum Strategy - Backtest Report
+    # Calculate long/short breakdown
+    long_trades = trades_df[trades_df["direction"] == "long"] if "direction" in trades_df.columns else trades_df
+    short_trades = trades_df[trades_df["direction"] == "short"] if "direction" in trades_df.columns else pd.DataFrame()
+
+    long_count = len(long_trades)
+    short_count = len(short_trades)
+    long_win_rate = (long_trades["return_pct"] > 0).mean() * 100 if long_count > 0 else 0
+    short_win_rate = (short_trades["return_pct"] > 0).mean() * 100 if short_count > 0 else 0
+
+    report = f"""# Channel Breakout Strategy - Backtest Report
 
 **Generated:** {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Period:** {start_date} to {end_date}
@@ -198,6 +302,8 @@ def generate_markdown_report(
 | Metric | Value |
 |--------|-------|
 | **Total Trades** | {metrics['total_trades']} |
+| **Long Trades** | {long_count} ({long_win_rate:.1f}% win rate) |
+| **Short Trades** | {short_count} ({short_win_rate:.1f}% win rate) |
 | **Net P&L** | ₹{metrics['net_pnl']:,.2f} |
 | **Win Rate** | {metrics['win_rate']:.2f}% |
 | **Average Return** | {metrics['avg_return_pct']:.2f}% |
@@ -232,14 +338,19 @@ def generate_markdown_report(
         )
 
     report += "\n---\n\n## Strategy Description\n\n"
-    report += "**Entry Rules:**\n"
-    report += "- Buy when a stock shows two consecutive positive days (Close > Open)\n"
-    report += "- Entry at next day's Open price\n\n"
-    report += "**Exit Rules:**\n"
-    report += "- Sell when a stock shows two consecutive negative days (Close < Open)\n"
-    report += "- Exit at next day's Open price\n\n"
+    report += "**Channel Breakout Strategy (Long/Short with Reversals)**\n\n"
+    report += "**Long Entry Rules:**\n"
+    report += "- Price breaks above upper channel (10-bar highest high)\n"
+    report += "- Entry at next bar's Open price\n"
+    report += "- If currently SHORT, automatically reverse to LONG\n\n"
+    report += "**Short Entry Rules:**\n"
+    report += "- Price breaks below lower channel (10-bar lowest low)\n"
+    report += "- Entry at next bar's Open price\n"
+    report += "- If currently LONG, automatically reverse to SHORT\n\n"
     report += "**Position Sizing:**\n"
-    report += "- 1 share per trade (for backtesting purposes)\n\n"
+    report += "- 1 share per trade (for backtesting purposes)\n"
+    report += "- Fixed order size: 250 units (in live trading)\n"
+    report += "- Max pyramiding: 18 concurrent positions\n\n"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report)

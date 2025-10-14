@@ -30,11 +30,9 @@ env/
 .env
 .env.local
 
-# Data files
-data/
-*.csv
-*.json
-!data/bse30_constituents.csv
+# Data files (data folder now tracked)
+# *.csv - Allow CSV files in data/ and reports/
+# *.json - Allow JSON files for portfolio state
 
 # Scripts (one-time setup utilities)
 scripts/

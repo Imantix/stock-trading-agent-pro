@@ -30,6 +30,11 @@ import backtest as bt
 import generate_calls as calls
 import execute_calls as execute
 from download_prices import main as download_prices
+from download_intraday_prices import main as download_intraday_prices
+
+# Import config for multi-provider support
+sys.path.insert(0, str(Path(__file__).parent))
+from config import INDICES, get_data_paths
 
 
 DEFAULT_INVESTMENT = 100_000.0
@@ -43,12 +48,49 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         type=str,
         required=True,
-        help="Strategy to use (e.g., two_day_momentum)",
+        help="Strategy to use (e.g., two_day_momentum, channel_breakout)",
+    )
+    parser.add_argument(
+        "--index",
+        type=str,
+        default="bse30",
+        choices=["bse30", "sp500"],
+        help="Index to trade (default: bse30)",
     )
     parser.add_argument(
         "--backtest",
         action="store_true",
         help="Run backtest mode instead of daily trading",
+    )
+    parser.add_argument(
+        "--portfolio",
+        action="store_true",
+        help="Run portfolio-level backtest with realistic capital allocation (requires --backtest)",
+    )
+    parser.add_argument(
+        "--initial-capital",
+        type=float,
+        default=1_000_000.0,
+        help="Initial capital for portfolio backtest (default: $1,000,000)",
+    )
+    parser.add_argument(
+        "--position-size",
+        type=int,
+        default=250,
+        help="Position size in units per trade for portfolio backtest (default: 250)",
+    )
+    parser.add_argument(
+        "--max-positions",
+        type=int,
+        default=18,
+        help="Maximum concurrent positions for portfolio backtest (default: 18)",
+    )
+    parser.add_argument(
+        "--timeframe",
+        type=str,
+        default="daily",
+        choices=["daily", "5m", "15m", "1h"],
+        help="Timeframe for data (default: daily)",
     )
     parser.add_argument(
         "--investment",
@@ -96,62 +138,185 @@ def main() -> int:
         print(f"  Available strategies: {', '.join([f.stem for f in (Path(__file__).parent / 'strategies').glob('*.py') if f.stem != '__init__'])}")
         return 1
 
-    prices_file = DATA_DIR / "bse30_daily_prices.csv"
-    summary_file = DATA_DIR / f"bse30_summary_{args.strategy}.csv"
-    report_file = DATA_DIR / f"backtest_report_{args.strategy}.md"
-    constituents_file = DATA_DIR / "bse30_constituents.csv"
-    portfolio_state_file = DATA_DIR / f"portfolio_state_{args.strategy}.json"
+    # Get index configuration
+    index_config = INDICES[args.index]
+    provider = index_config.provider
+
+    # Get file paths using new config system
+    paths = get_data_paths(provider, args.index, args.strategy, args.timeframe)
+    prices_file = paths["prices"]
+    summary_file = paths["summary"]
+    report_file = paths["report"]
+    constituents_file = paths["constituents"]
+    portfolio_state_file = paths["portfolio_state"]
+
+    # Determine if intraday
+    is_intraday = args.timeframe != "daily"
 
     # BACKTEST MODE
     if args.backtest:
         print("=" * 60)
-        print("BACKTEST MODE")
+        print(f"BACKTEST MODE: {index_config.name} ({args.timeframe.upper()})")
+        print(f"Provider: {provider}")
         print("=" * 60)
 
         # Step 1: Download latest prices
         if not args.skip_download:
-            print("\nSTEP 1: Downloading latest BSE-30 prices...")
+            print(f"\nSTEP 1: Downloading {index_config.name} {args.timeframe} data via {provider}...")
             print("=" * 60)
             try:
-                download_prices()
+                if provider == "yfinance":
+                    # Use Yahoo Finance downloader
+                    original_argv = sys.argv[:]
+                    sys.argv = [
+                        "download_yfinance.py",
+                        "--index", args.index,
+                        "--timeframe", args.timeframe,
+                        "--output", str(prices_file),
+                    ]
+                    sys.path.insert(0, str(Path(__file__).parent / "helpers"))
+                    from download_yfinance import main as download_yfinance
+                    download_yfinance()
+                    sys.argv = original_argv
+                elif provider == "upstox":
+                    # Use Upstox downloader
+                    if is_intraday:
+                        interval_map = {"5m": "5minute", "15m": "15minute", "1h": "60minute"}
+                        interval = interval_map.get(args.timeframe, "5minute")
+                        original_argv = sys.argv[:]
+                        sys.argv = [
+                            "download_intraday_prices.py",
+                            "--interval", interval,
+                            "--output", str(prices_file),
+                        ]
+                        download_intraday_prices()
+                        sys.argv = original_argv
+                    else:
+                        download_prices()
                 print(f"✓ Prices downloaded to {prices_file}\n")
             except Exception as e:
                 print(f"✗ Error downloading prices: {e}")
+                import traceback
+                traceback.print_exc()
                 return 1
         else:
-            print("\nSkipping price download (using existing data)\n")
+            print(f"\nSkipping price download (using existing data: {prices_file})\n")
 
         # Step 2: Run backtest
         print("=" * 60)
-        print(f"STEP 2: Running backtest with {args.strategy} strategy...")
+        if args.portfolio:
+            print(f"STEP 2: Running PORTFOLIO backtest with {args.strategy} strategy ({args.timeframe} data)...")
+            print(f"Initial Capital: ${args.initial_capital:,.2f}")
+            print(f"Position Size: {args.position_size} units per trade")
+            print(f"Max Positions: {args.max_positions}")
+        else:
+            print(f"STEP 2: Running PER-SYMBOL backtest with {args.strategy} strategy ({args.timeframe} data)...")
         print("=" * 60)
+
         try:
             annotate_signals = getattr(strategy_module, 'annotate_signals')
+            timeframe_mode = "intraday" if is_intraday else "daily"
 
-            prices = bt.load_prices(prices_file)
-            prices = annotate_signals(prices)
-            trades = bt.generate_trades(prices)
-            trades_df = bt.summarize_trades(trades)
+            if args.portfolio:
+                # Portfolio-level backtest with realistic capital allocation
+                from backtest_portfolio import PortfolioBacktest, calculate_metrics, generate_consolidated_report
 
-            if trades_df.empty:
-                print("✗ No trades were generated by the strategy")
-                return 1
+                # Load and annotate prices
+                prices = bt.load_prices(prices_file, timeframe=timeframe_mode)
+                prices = annotate_signals(prices)
 
-            summary_df = bt.aggregate_summary(trades_df)
-            metrics = bt.overall_metrics(trades_df)
+                # Run portfolio backtest
+                print(f"\nRunning portfolio backtest...")
+                portfolio_bt = PortfolioBacktest(
+                    initial_capital=args.initial_capital,
+                    position_size=args.position_size,
+                    max_positions=args.max_positions
+                )
 
-            # Save summary
-            summary_df.to_csv(summary_file, index=False)
-            print(f"✓ Summary saved to {summary_file}")
+                portfolio_history = portfolio_bt.run_backtest(
+                    prices=prices,
+                    strategy_module=strategy_module,
+                    timeframe=timeframe_mode
+                )
 
-            # Generate report
-            bt.generate_markdown_report(metrics, summary_df, trades_df, report_file)
-            print(f"✓ Report saved to {report_file}")
+                print(f"Backtest completed! Processed {len(portfolio_history)} trading days\n")
+
+                # Calculate metrics
+                print("Calculating performance metrics...")
+                metrics = calculate_metrics(portfolio_history, portfolio_bt.trade_log)
+
+                # Print summary
+                print("=" * 60)
+                print("PORTFOLIO PERFORMANCE SUMMARY")
+                print("=" * 60)
+                print(f"Initial Capital:     ${metrics['initial_capital']:,.2f}")
+                print(f"Final Capital:       ${metrics['final_capital']:,.2f}")
+                total_pnl = metrics['final_capital'] - metrics['initial_capital']
+                print(f"Total P&L:           ${total_pnl:,.2f} ({metrics['total_return_pct']:.2f}%)")
+                print(f"CAGR:                {metrics['cagr_pct']:.2f}%")
+                print(f"Sharpe Ratio:        {metrics['sharpe_ratio']:.2f}")
+                print(f"Max Drawdown:        {metrics['max_drawdown_pct']:.2f}%")
+                print(f"Total Trades:        {metrics['total_trades']}")
+                print(f"Win Rate:            {metrics['win_rate_pct']:.2f}%")
+                print(f"Profit Factor:       {metrics['profit_factor']:.2f}")
+                print("=" * 60)
+                print()
+
+                # Add portfolio configuration to metrics
+                metrics['position_size'] = args.position_size
+                metrics['max_positions'] = args.max_positions
+
+                # Generate report
+                portfolio_report = paths["portfolio_report"]
+                print(f"Generating consolidated report: {portfolio_report}")
+                generate_consolidated_report(
+                    metrics=metrics,
+                    results=portfolio_history,
+                    trade_log=portfolio_bt.trade_log,
+                    output_path=portfolio_report,
+                    strategy_module=strategy_module,
+                    index_name=index_config.name,
+                    timeframe=args.timeframe.capitalize()
+                )
+                print(f"✓ Report saved to: {portfolio_report}\n")
+
+                # Save portfolio data
+                portfolio_history.to_csv(paths["portfolio_history"], index=False)
+                print(f"✓ Portfolio history saved to: {paths['portfolio_history']}")
+
+                trade_log_df = pd.DataFrame(portfolio_bt.trade_log)
+                trade_log_df.to_csv(paths["portfolio_trade_log"], index=False)
+                print(f"✓ Trade log saved to: {paths['portfolio_trade_log']}")
+
+            else:
+                # Per-symbol backtest (original behavior)
+                prices = bt.load_prices(prices_file, timeframe=timeframe_mode)
+                prices = annotate_signals(prices)
+                trades = bt.generate_trades(prices, timeframe=timeframe_mode)
+                trades_df = bt.summarize_trades(trades)
+
+                if trades_df.empty:
+                    print("✗ No trades were generated by the strategy")
+                    return 1
+
+                summary_df = bt.aggregate_summary(trades_df)
+                metrics = bt.overall_metrics(trades_df)
+
+                # Save summary
+                summary_df.to_csv(summary_file, index=False)
+                print(f"✓ Summary saved to {summary_file}")
+
+                # Generate report
+                bt.generate_markdown_report(metrics, summary_df, trades_df, report_file)
+                print(f"✓ Report saved to {report_file}")
 
             print("\n" + "=" * 60)
             print("BACKTEST COMPLETE")
             print("=" * 60)
-            print(f"\nView report: {report_file}")
+            if args.portfolio:
+                print(f"\nView report: {paths['portfolio_report']}")
+            else:
+                print(f"\nView report: {report_file}")
 
             return 0
 
@@ -165,10 +330,25 @@ def main() -> int:
     # Step 1: Download latest prices
     if not args.skip_download:
         print("=" * 60)
-        print("STEP 1: Downloading latest BSE-30 prices...")
+        print(f"STEP 1: Downloading latest BSE-30 {args.timeframe} prices...")
         print("=" * 60)
         try:
-            download_prices()
+            if is_intraday:
+                # Map timeframe to interval
+                interval_map = {"5m": "5minute", "15m": "15minute", "1h": "60minute"}
+                interval = interval_map.get(args.timeframe, "5minute")
+
+                # Call intraday downloader with interval parameter
+                original_argv = sys.argv[:]
+                sys.argv = [
+                    "download_intraday_prices.py",
+                    "--interval", interval,
+                    "--output", str(prices_file),
+                ]
+                download_intraday_prices()
+                sys.argv = original_argv
+            else:
+                download_prices()
             print(f"✓ Prices downloaded to {prices_file}\n")
         except Exception as e:
             print(f"✗ Error downloading prices: {e}")
@@ -195,7 +375,10 @@ def main() -> int:
 
     # Step 3: Load prices for call generation
     try:
-        prices = pd.read_csv(prices_file, parse_dates=["date"])
+        if is_intraday:
+            prices = pd.read_csv(prices_file, parse_dates=["datetime"])
+        else:
+            prices = pd.read_csv(prices_file, parse_dates=["date"])
     except Exception as e:
         print(f"✗ Error loading prices: {e}")
         return 1
@@ -234,8 +417,12 @@ def main() -> int:
             print()
 
         # Save all calls for reference
-        latest_date = prices["date"].max()
-        planned_date = (latest_date + timedelta(days=1)).date()
+        if is_intraday:
+            latest_datetime = prices["datetime"].max()
+            planned_date = latest_datetime.date()
+        else:
+            latest_date = prices["date"].max()
+            planned_date = (latest_date + timedelta(days=1)).date()
 
         if sell_calls:
             sell_calls_file = DATA_DIR / f"daily_sell_calls_{planned_date.isoformat()}.csv"
