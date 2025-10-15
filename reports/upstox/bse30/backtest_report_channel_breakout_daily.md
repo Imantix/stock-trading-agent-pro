@@ -1,6 +1,6 @@
 # Channel Breakout Strategy - Backtest Report
 
-**Generated:** 2025-10-14 13:47:59
+**Generated:** 2025-10-15 07:42:24
 **Period:** 2025-07-31 to 2025-10-13
 **Universe:** BSE-30 (30 stocks)
 

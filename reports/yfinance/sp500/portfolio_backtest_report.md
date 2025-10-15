@@ -1,6 +1,6 @@
 # Volume Momentum V2.4 - Portfolio Backtest Report
 
-**Generated:** 2025-10-14 18:07:09
+**Generated:** 2025-10-15 07:48:54
 **Strategy:** Volume Momentum V2.4
 **Index:** S&P 500
 **Timeframe:** Daily
@@ -11,14 +11,14 @@
 
 | Metric | Value |
 |--------|-------|
-| **Test Period** | 2024-10-15 to 2025-10-13 |
+| **Test Period** | 2024-10-16 to 2025-10-14 |
 | **Duration** | 363 days (0.99 years) |
 | **Initial Capital** | $1,000,000.00 |
-| **Final Capital** | $1,126,238.36 |
-| **Total Return** | 12.62% |
-| **CAGR** | 12.71% |
-| **Sharpe Ratio** | 1.35 |
-| **Max Drawdown** | -3.28% |
+| **Final Capital** | $1,137,219.83 |
+| **Total Return** | 13.72% |
+| **CAGR** | 13.81% |
+| **Sharpe Ratio** | 1.48 |
+| **Max Drawdown** | -2.69% |
 
 ---
 
@@ -26,9 +26,9 @@
 
 | Metric | Value |
 |--------|-------|
-| **Total Trades** | 377 |
-| **Win Rate** | 58.09% |
-| **Profit Factor** | 1.51 |
+| **Total Trades** | 374 |
+| **Win Rate** | 58.56% |
+| **Profit Factor** | 1.58 |
 
 ---
 
@@ -53,33 +53,33 @@
 
 | Rank | Symbol | Total P&L | Trades | Avg P&L | Avg Return % |
 |------|--------|-----------|--------|---------|--------------||
-| 1 | NKE | $-1,527.50 | 9 | $-169.72 | -1.03% |
-| 2 | LLY | $-2,211.78 | 8 | $-276.47 | -0.28% |
+| 1 | V | $-842.49 | 6 | $-140.42 | -0.11% |
+| 2 | NKE | $-1,527.50 | 9 | $-169.72 | -1.03% |
 | 3 | IBM | $-2,279.99 | 10 | $-228.00 | -0.32% |
-| 4 | CRM | $-3,527.50 | 13 | $-271.35 | -0.07% |
+| 4 | CRM | $-3,382.50 | 13 | $-260.19 | -0.05% |
 | 5 | ACN | $-4,395.00 | 6 | $-732.50 | -0.85% |
 | 6 | UNH | $-4,492.47 | 15 | $-299.50 | -0.39% |
 | 7 | ABBV | $-5,960.00 | 9 | $-662.22 | -1.22% |
 | 8 | ADBE | $-6,085.00 | 8 | $-760.62 | -0.48% |
-| 9 | TSLA | $-15,117.51 | 9 | $-1,679.72 | -2.36% |
-| 10 | COST | $-15,647.48 | 6 | $-2,607.91 | -0.99% |
+| 9 | TSLA | $-9,740.01 | 8 | $-1,217.50 | -1.89% |
+| 10 | COST | $-13,399.98 | 5 | $-2,680.00 | -1.00% |
 
 ---
 
 ## Portfolio Growth
 
 **Starting Capital:** $1,000,000.00
-**Ending Capital:** $1,126,238.36
-**Profit/Loss:** $126,238.36
+**Ending Capital:** $1,137,219.83
+**Profit/Loss:** $137,219.83
 
 ---
 
 ## Risk Metrics
 
-- **Maximum Drawdown:** -3.28%
-- **Sharpe Ratio:** 1.35
-- **Total Return:** 12.62%
-- **Annualized Return (CAGR):** 12.71%
+- **Maximum Drawdown:** -2.69%
+- **Sharpe Ratio:** 1.48
+- **Total Return:** 13.72%
+- **Annualized Return (CAGR):** 13.81%
 
 ---
 
