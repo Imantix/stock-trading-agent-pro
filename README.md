@@ -1,15 +1,18 @@
 # Stock Trading Agent Pro
 
-A professional algorithmic trading system with backtesting engine, portfolio simulation, and live trading capabilities. Supports multiple strategies across S&P 500 and Indian equities (BSE-30).
+A professional algorithmic trading system with backtesting engine, portfolio simulation, and live trading capabilities. **All functionality is accessed through a single entry point: `agent.py`**
 
 ## Features
 
-- **Multiple Trading Strategies**: Volume Momentum, Channel Breakout, Two-Day Momentum
+- **Single Entry Point**: All operations (trading, backtesting, analysis) through `agent.py`
+- **Multiple Trading Strategies**: Six built-in strategies including Volume Momentum, Channel Breakout, Cumulative Momentum
 - **Portfolio Backtesting**: Realistic simulation with capital allocation, position sizing, and risk management
+- **Analysis Tools**: Built-in optimization, price analysis, and strategy testing tools
 - **Performance Analytics**: CAGR, Sharpe Ratio, Max Drawdown, Win Rate tracking
+- **Real-Time Simulation**: Bar-by-bar backtesting with execution timing metrics
 - **Technical Indicators Library**: Reusable ATR, RSI, ADR, volume ratios, filters, and more
 - **Live Trading**: Integration with Upstox API for paper/live trading
-- **Multi-Market Support**: S&P 500 (via YFinance) and BSE-30 (via Upstox)
+- **Multi-Market Support**: S&P 500 (via YFinance) and BSE-30/Nifty (via Upstox)
 
 ## Best Performing Strategy
 
@@ -25,6 +28,31 @@ A professional algorithmic trading system with backtesting engine, portfolio sim
 - Enters on volume spikes (>1.5x average) + price momentum (>0.3%)
 - Filters out defensive stocks unsuitable for momentum trading
 - Exits at +0.3% profit target, -0.5% stop loss, or 5-day max hold
+
+## Quick Usage Examples
+
+```bash
+# List all available strategies
+python agent.py --strategy list
+
+# Run backtest with Volume Momentum strategy
+python agent.py --action backtest --strategy volume_momentum
+
+# Analyze price movements for optimal profit targets
+python agent.py --action analyze-price
+
+# Optimize strategy for platform costs
+python agent.py --action optimize-costs
+
+# Run real-time simulation (one day)
+python agent.py --action realtime-backtest-oneday
+
+# Live trading with dry run
+python agent.py --strategy volume_momentum --dry-run
+
+# Live trading (requires Upstox token)
+python agent.py --strategy volume_momentum
+```
 
 ## Quick Start
 
@@ -47,10 +75,16 @@ pip install -r requirements.txt
 
 ```bash
 # Portfolio backtest (realistic simulation with $1M capital)
-python run_portfolio_backtest.py
+python agent.py --action backtest --strategy volume_momentum --portfolio
 
 # Per-symbol backtest (for strategy analysis)
-python agent.py --strategy volume_momentum --backtest
+python agent.py --action backtest --strategy volume_momentum
+
+# Real-time simulation backtest
+python agent.py --action realtime-backtest
+
+# List all available strategies (will show error with list)
+python agent.py --strategy list
 ```
 
 **Outputs:**
@@ -68,7 +102,7 @@ cp .env.example .env
 # Dry run (no actual trades)
 python agent.py --strategy volume_momentum --dry-run
 
-# Live trading
+# Live trading (default action is 'trade')
 python agent.py --strategy volume_momentum
 ```
 
@@ -76,14 +110,17 @@ python agent.py --strategy volume_momentum
 
 ```
 .
-├── agent.py                          # Main trading agent (CLI entry point)
-├── run_portfolio_backtest.py         # Portfolio backtesting script
+├── agent.py                          # Single entry point for ALL operations
 ├── strategies/
 │   ├── volume_momentum.py            # Volume Momentum V2.4 (best performer)
 │   ├── channel_breakout.py           # Channel breakout strategy
-│   └── two_day_momentum.py           # Two-day momentum strategy
+│   ├── two_day_momentum.py           # Two-day momentum strategy
+│   ├── cumulative_momentum.py        # Cumulative momentum with thresholds
+│   ├── green_red_bars.py             # Green/red bar pattern strategy
+│   └── quick_scalp.py                # Quick scalping strategy
 ├── helpers/
 │   ├── backtest_portfolio.py         # Portfolio backtesting engine
+│   ├── backtest_realtime.py          # Real-time simulation backtesting
 │   ├── backtest.py                   # Per-symbol backtesting
 │   ├── indicators.py                 # Technical indicators library
 │   ├── download_prices.py            # Data fetching (YFinance/Upstox)
@@ -104,7 +141,7 @@ python agent.py --strategy volume_momentum
 - Entry: Volume spike (>1.5x) + price up >0.3%
 - Exit: +0.3% profit / -0.5% stop / 5-day max hold
 - Filter: Excludes defensive stocks (VZ, KO, PG, JNJ, PEP, ABT, MCD, WMT)
-- Timeframe: Daily
+- Timeframe: Daily or intraday (1m, 5m)
 - Performance: 12.62% return, 1.35 Sharpe, -3.28% max DD
 
 ### Channel Breakout
@@ -122,6 +159,30 @@ python agent.py --strategy volume_momentum
 - Exit: 2 consecutive red candles
 - Timeframe: Daily
 - Use: Strong trending markets
+
+### Cumulative Momentum
+**Threshold-based momentum scoring**
+
+- Entry: Combined momentum score exceeds threshold
+- Exit: Dynamic stop loss with trailing stops
+- Timeframe: Intraday (1m, 5m)
+- Use: Momentum bursts with risk management
+
+### Green Red Bars
+**Bar pattern recognition**
+
+- Entry: Specific green/red bar patterns
+- Exit: Pattern-based or time-based exits
+- Timeframe: Daily or intraday
+- Use: Pattern-based trading
+
+### Quick Scalp
+**Fast in-and-out scalping**
+
+- Entry: Quick momentum signals
+- Exit: Tight profit targets and stops
+- Timeframe: 1-minute preferred
+- Use: High-frequency scalping
 
 ## Technical Indicators Library
 
@@ -186,22 +247,91 @@ Edit `run_portfolio_backtest.py` to change strategy, date range, or capital.
 python agent.py --help
 ```
 
-**Required:**
-- `--strategy STRATEGY` - Strategy name (e.g., `volume_momentum`)
+**Action (Main Operation Mode):**
+- `--action ACTION` - Operation to perform:
+  - `trade` (default) - Live trading mode
+  - `backtest` - Run backtesting
+  - `analyze-1pct` - Analyze 1% profit target viability
+  - `analyze-price` - Analyze price movements for optimal targets
+  - `optimize-costs` - Optimize strategy with platform costs
+  - `test-thresholds` - Test different momentum thresholds
+  - `realtime-backtest` - Full real-time simulation
+  - `realtime-backtest-oneday` - One-day real-time simulation
+
+**Strategy:**
+- `--strategy STRATEGY` - Strategy name (required for trade/backtest)
+  - Available: `volume_momentum`, `channel_breakout`, `two_day_momentum`,
+    `cumulative_momentum`, `green_red_bars`, `quick_scalp`
 
 **Modes:**
-- `--backtest` - Run backtest and generate report
 - `--dry-run` - Generate trade signals without executing
+- `--portfolio` - Run portfolio-level backtest (with --action backtest)
 
 **Data:**
-- `--index INDEX` - Market index: `sp500` or `bse30` (default: `sp500`)
-- `--timeframe TIMEFRAME` - Data timeframe: `daily` or `5m` (default: `daily`)
+- `--index INDEX` - Market index: `bse30`, `sp500`, `niftysmallcap100` (default: `bse30`)
+- `--timeframe TIMEFRAME` - Data timeframe: `daily`, `1m`, `5m`, `15m`, `1h` (default: `daily`)
 - `--skip-download` - Use existing data without downloading
 
-**Trading:**
+**Trading Parameters:**
 - `--investment AMOUNT` - Total capital (default: ₹100,000)
 - `--top-n N` - Number of stocks to trade (default: 5)
+- `--position-size SIZE` - Units per trade for portfolio mode (default: 250)
+- `--max-positions N` - Max concurrent positions (default: 18)
+- `--initial-capital AMOUNT` - Starting capital for portfolio backtest (default: ₹1,000,000)
 - `--access-token TOKEN` - Upstox API token
+
+## Analysis and Optimization Tools
+
+Agent.py now includes built-in analysis and optimization tools:
+
+### 1. Analyze 1% Profit Target
+Test viability of 1% profit targets vs 0.4% stop loss:
+```bash
+python agent.py --action analyze-1pct
+```
+- Simulates trades with different profit/stop combinations
+- Calculates win rates and expected values
+- Recommends optimal targets based on historical data
+
+### 2. Price Movement Analysis
+Analyze historical price movements to find optimal profit targets:
+```bash
+python agent.py --action analyze-price
+```
+- Studies 1-minute price change distributions
+- Calculates probability of hitting various targets
+- Recommends targets based on expected value
+
+### 3. Platform Cost Optimization
+Optimize strategy parameters accounting for transaction costs:
+```bash
+python agent.py --action optimize-costs
+```
+- Tests multiple parameter combinations
+- Accounts for 0.0225% platform costs
+- Finds configurations that remain profitable after costs
+
+### 4. Momentum Threshold Testing
+Test different threshold values for momentum strategies:
+```bash
+python agent.py --action test-thresholds
+```
+- Compares performance across threshold values
+- Tests against baseline strategy
+- Identifies optimal momentum scores
+
+### 5. Real-Time Simulation
+Simulate live trading with realistic execution:
+```bash
+# Full dataset
+python agent.py --action realtime-backtest
+
+# Single day (faster)
+python agent.py --action realtime-backtest-oneday
+```
+- Processes data bar-by-bar like live trading
+- Includes execution delays and timing metrics
+- Measures scan times and capacity
 
 ## Performance Reports
 

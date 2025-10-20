@@ -31,6 +31,20 @@ INDICES: Dict[str, IndexConfig] = {
         symbols_count=30,
         description="Bombay Stock Exchange Top 30 (India)"
     ),
+    "niftysmallcap100": IndexConfig(
+        name="NIFTY Smallcap 100",
+        provider="upstox",
+        constituents_file="niftysmallcap100_constituents.csv",
+        symbols_count=100,
+        description="NSE liquid small-cap basket"
+    ),
+    "niftysmallcap100_liquid": IndexConfig(
+        name="NIFTY Smallcap 100 (Liquid)",
+        provider="upstox",
+        constituents_file="niftysmallcap100_liquid_constituents.csv",
+        symbols_count=34,
+        description="Top liquidity slice of NSE small caps"
+    ),
     "sp500": IndexConfig(
         name="S&P 500",
         provider="yfinance",
