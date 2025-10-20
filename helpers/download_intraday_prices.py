@@ -19,6 +19,10 @@ from typing import List
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 UPSTOX_API_BASE = "https://api.upstox.com/v2"
 USER_AGENT = (
