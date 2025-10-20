@@ -956,7 +956,13 @@ def main() -> int:
                         download_intraday_prices()
                         sys.argv = original_argv
                     else:
+                        original_argv = sys.argv[:]
+                        sys.argv = [
+                            "download_prices.py",
+                            "--output", str(prices_file),
+                        ]
                         download_prices()
+                        sys.argv = original_argv
                 print(f"✓ Prices downloaded to {prices_file}\n")
             except Exception as e:
                 print(f"✗ Error downloading prices: {e}")
@@ -1112,7 +1118,13 @@ def main() -> int:
                 download_intraday_prices()
                 sys.argv = original_argv
             else:
+                original_argv = sys.argv[:]
+                sys.argv = [
+                    "download_prices.py",
+                    "--output", str(prices_file),
+                ]
                 download_prices()
+                sys.argv = original_argv
             print(f"✓ Prices downloaded to {prices_file}\n")
         except Exception as e:
             print(f"✗ Error downloading prices: {e}")
