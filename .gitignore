@@ -30,9 +30,14 @@ env/
 .env
 .env.local
 
-# Data files (data folder now tracked)
-# *.csv - Allow CSV files in data/ and reports/
-# *.json - Allow JSON files for portfolio state
+# Data files (downloaded and generated)
+data/prices/
+data/backtest_results/
+data/analysis/
+
+# Reports (generated)
+reports/upstox/
+reports/yfinance/
 
 # Scripts (one-time setup utilities)
 scripts/
